@@ -1,0 +1,194 @@
+// =====================================================================
+// Medidas DAX del reporte "Costos de personal"
+// ---------------------------------------------------------------------
+// Cómo usar este archivo (Power BI Desktop):
+//   1) Crear la tabla vacía "Medidas": Inicio > Especificar datos >
+//      Nombre: Medidas > Cargar.
+//   2) Abrir la vista de consultas DAX, pegar TODO este archivo y
+//      ejecutarlo: abajo aparecen los valores de control.
+//   3) Clic en "Actualizar modelo con cambios": las 27 medidas quedan
+//      guardadas en la tabla Medidas.
+//   Alternativa manual: Modelado > Nueva medida y escribir
+//   Nombre = expresión, una por una.
+//
+// Requisitos del modelo:
+//   - Planilla[id_colaborador]  (*) -> (1) Colaboradores[id_colaborador]
+//   - Planilla[fecha_periodo]   (*) -> (1) Calendario[Fecha]
+//   - Calendario marcada como tabla de fechas.
+//   Colaboradores NO se relaciona con Calendario: las medidas de egresos
+//   usan TREATAS sobre Colaboradores[fecha_egreso].
+//
+// Formato sugerido para cada medida al final de su comentario, entre
+// corchetes (se asigna en Herramientas de medida > Formato).
+// =====================================================================
+
+DEFINE
+
+    // -----------------------------------------------------------------
+    // Costo laboral
+    // -----------------------------------------------------------------
+
+    // Todo lo que la empresa paga por su gente: total ganado + aportes
+    // patronales + provisiones. [#,0]
+    MEASURE Medidas[Costo Laboral] =
+        SUM ( Planilla[costo_total_bs] )
+
+    // Básico pagado + bono de antigüedad + horas extra. [#,0]
+    MEASURE Medidas[Total Ganado] =
+        SUM ( Planilla[total_ganado_bs] )
+
+    // Haber básico proporcional a los días en planilla. [#,0]
+    MEASURE Medidas[Básico Pagado] =
+        SUM ( Planilla[basico_pagado_bs] )
+
+    // [#,0]
+    MEASURE Medidas[Bono Antigüedad] =
+        SUM ( Planilla[bono_antiguedad_bs] )
+
+    // [#,0]
+    MEASURE Medidas[Monto Horas Extra] =
+        SUM ( Planilla[monto_horas_extra_bs] )
+
+    // [#,0]
+    MEASURE Medidas[Aportes Patronales] =
+        SUM ( Planilla[aportes_patronales_bs] )
+
+    // Aguinaldo + indemnización. [#,0]
+    MEASURE Medidas[Provisiones] =
+        SUM ( Planilla[provision_aguinaldo_bs] ) + SUM ( Planilla[provision_indemnizacion_bs] )
+
+    // Cuántos Bs le cuesta a la empresa cada Bs 1 de sueldo básico. [0,00]
+    MEASURE Medidas[Factor de Carga Laboral] =
+        DIVIDE ( [Costo Laboral], [Básico Pagado] )
+
+    // Meses equivalentes a tiempo completo (30 días en planilla = 1 mes). [#,0]
+    MEASURE Medidas[Meses-Persona] =
+        DIVIDE ( SUM ( Planilla[dias_trabajados] ), 30 )
+
+    // Costo de un colaborador a tiempo completo durante un mes. [#,0]
+    MEASURE Medidas[Costo Mensual por Colaborador] =
+        DIVIDE ( [Costo Laboral], [Meses-Persona] )
+
+    // Los 12 meses que terminan en la última fecha visible. [#,0]
+    MEASURE Medidas[Costo Últimos 12 Meses] =
+        CALCULATE (
+            [Costo Laboral],
+            DATESINPERIOD ( Calendario[Fecha], MAX ( Calendario[Fecha] ), -12, MONTH )
+        )
+
+    // Desde el 1 de abril de la gestión en curso hasta la última fecha
+    // visible (gestión de abril a marzo). [#,0]
+    MEASURE Medidas[Costo Acumulado Gestión] =
+        VAR UltimaFecha = MAX ( Calendario[Fecha] )
+        VAR InicioGestion =
+            DATE ( IF ( MONTH ( UltimaFecha ) >= 4, YEAR ( UltimaFecha ), YEAR ( UltimaFecha ) - 1 ), 4, 1 )
+        RETURN
+            CALCULATE ( [Costo Laboral], DATESBETWEEN ( Calendario[Fecha], InicioGestion, UltimaFecha ) )
+
+    // [#,0]
+    MEASURE Medidas[Costo Mes Anterior] =
+        CALCULATE ( [Costo Laboral], DATEADD ( Calendario[Fecha], -1, MONTH ) )
+
+    // [0,0%]
+    MEASURE Medidas[Var % vs Mes Anterior] =
+        DIVIDE ( [Costo Laboral] - [Costo Mes Anterior], [Costo Mes Anterior] )
+
+    // [#,0]
+    MEASURE Medidas[Costo Año Anterior] =
+        CALCULATE ( [Costo Laboral], SAMEPERIODLASTYEAR ( Calendario[Fecha] ) )
+
+    // [0,0%]
+    MEASURE Medidas[Var % Interanual] =
+        DIVIDE ( [Costo Laboral] - [Costo Año Anterior], [Costo Año Anterior] )
+
+    // -----------------------------------------------------------------
+    // Horas extra y ausentismo
+    // -----------------------------------------------------------------
+
+    // [#,0]
+    MEASURE Medidas[Horas Extra] =
+        SUM ( Planilla[horas_extra] )
+
+    // Horas extra al mes de un colaborador a tiempo completo. [0,0]
+    MEASURE Medidas[Horas Extra por Colaborador] =
+        DIVIDE ( [Horas Extra], [Meses-Persona] )
+
+    // Cuánto suma el pago de horas extra sobre el básico. [0,0%]
+    MEASURE Medidas[% Horas Extra sobre Básico] =
+        DIVIDE ( [Monto Horas Extra], [Básico Pagado] )
+
+    // [#,0]
+    MEASURE Medidas[Días de Ausencia] =
+        SUM ( Planilla[dias_ausencia] )
+
+    // Días de ausencia sobre días en planilla. [0,0%]
+    MEASURE Medidas[% Ausentismo] =
+        DIVIDE ( [Días de Ausencia], SUM ( Planilla[dias_trabajados] ) )
+
+    // -----------------------------------------------------------------
+    // Dotación y rotación
+    // -----------------------------------------------------------------
+
+    // Personas en planilla en el último mes del período visible. [#,0]
+    MEASURE Medidas[Dotación] =
+        VAR UltimaFecha = MAX ( Calendario[Fecha] )
+        VAR UltimoMes = DATE ( YEAR ( UltimaFecha ), MONTH ( UltimaFecha ), 1 )
+        RETURN
+            CALCULATE ( DISTINCTCOUNT ( Planilla[id_colaborador] ), Calendario[Fecha] = UltimoMes )
+
+    // Promedio de la dotación de cada mes visible. [#,0]
+    MEASURE Medidas[Dotación Promedio] =
+        AVERAGEX ( VALUES ( Calendario[Orden mes] ), [Dotación] )
+
+    // Personas cuya fecha de egreso cae en el período visible. [#,0]
+    MEASURE Medidas[Egresos] =
+        CALCULATE (
+            COUNTROWS ( Colaboradores ),
+            TREATAS ( VALUES ( Calendario[Fecha] ), Colaboradores[fecha_egreso] )
+        )
+
+    // Egresos por renuncia voluntaria en el período visible. [#,0]
+    MEASURE Medidas[Renuncias] =
+        CALCULATE (
+            COUNTROWS ( Colaboradores ),
+            Colaboradores[tipo_egreso] = "Renuncia voluntaria",
+            TREATAS ( VALUES ( Calendario[Fecha] ), Colaboradores[fecha_egreso] )
+        )
+
+    // Renuncias del período / dotación promedio del período. [0,0%]
+    MEASURE Medidas[Rotación Voluntaria %] =
+        DIVIDE ( [Renuncias], [Dotación Promedio] )
+
+    // La misma tasa llevada a 12 meses, para comparar períodos de
+    // distinto largo. [0,0%]
+    MEASURE Medidas[Rotación Voluntaria Anualizada %] =
+        VAR Meses = DISTINCTCOUNT ( Calendario[Orden mes] )
+        RETURN
+            DIVIDE ( [Renuncias], [Dotación Promedio] ) * DIVIDE ( 12, Meses )
+
+
+// ---------------------------------------------------------------------
+// Valores de control: últimos 12 meses (oct-2025 a sep-2026).
+// Tienen que coincidir con la tabla "Valores de control" del README.
+// ---------------------------------------------------------------------
+EVALUATE
+CALCULATETABLE (
+    UNION (
+        ROW ( "Indicador", "Costo Laboral", "Valor", CONVERT ( [Costo Laboral], DOUBLE ) ),
+        ROW ( "Indicador", "Costo Últimos 12 Meses", "Valor", CONVERT ( [Costo Últimos 12 Meses], DOUBLE ) ),
+        ROW ( "Indicador", "Costo Año Anterior", "Valor", CONVERT ( [Costo Año Anterior], DOUBLE ) ),
+        ROW ( "Indicador", "Var % Interanual", "Valor", CONVERT ( [Var % Interanual], DOUBLE ) ),
+        ROW ( "Indicador", "Costo Acumulado Gestión", "Valor", CONVERT ( [Costo Acumulado Gestión], DOUBLE ) ),
+        ROW ( "Indicador", "Costo Mensual por Colaborador", "Valor", CONVERT ( [Costo Mensual por Colaborador], DOUBLE ) ),
+        ROW ( "Indicador", "Factor de Carga Laboral", "Valor", CONVERT ( [Factor de Carga Laboral], DOUBLE ) ),
+        ROW ( "Indicador", "% Horas Extra sobre Básico", "Valor", CONVERT ( [% Horas Extra sobre Básico], DOUBLE ) ),
+        ROW ( "Indicador", "Horas Extra por Colaborador", "Valor", CONVERT ( [Horas Extra por Colaborador], DOUBLE ) ),
+        ROW ( "Indicador", "% Ausentismo", "Valor", CONVERT ( [% Ausentismo], DOUBLE ) ),
+        ROW ( "Indicador", "Dotación", "Valor", CONVERT ( [Dotación], DOUBLE ) ),
+        ROW ( "Indicador", "Dotación Promedio", "Valor", CONVERT ( [Dotación Promedio], DOUBLE ) ),
+        ROW ( "Indicador", "Egresos", "Valor", CONVERT ( [Egresos], DOUBLE ) ),
+        ROW ( "Indicador", "Renuncias", "Valor", CONVERT ( [Renuncias], DOUBLE ) ),
+        ROW ( "Indicador", "Rotación Voluntaria %", "Valor", CONVERT ( [Rotación Voluntaria %], DOUBLE ) )
+    ),
+    DATESBETWEEN ( Calendario[Fecha], DATE ( 2025, 10, 1 ), DATE ( 2026, 9, 30 ) )
+)

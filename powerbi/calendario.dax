@@ -1,0 +1,32 @@
+// =====================================================================
+// Tabla calculada: Calendario
+// Modelado > Nueva tabla > pegar esta expresión.
+// Después: marcarla como tabla de fechas (columna Fecha) y ordenar
+// "Mes nombre" por "Orden mes" (Herramientas de columna > Ordenar por columna).
+// "Inicio mes" (primer día de cada mes) sirve de eje continuo en los
+// gráficos de líneas.
+//
+// "Gestión" va de abril a marzo: es el año fiscal de las empresas
+// industriales en Bolivia (cierre al 31 de marzo).
+// =====================================================================
+
+Calendario =
+VAR Base =
+    SELECTCOLUMNS (
+        CALENDAR ( DATE ( 2023, 10, 1 ), DATE ( 2026, 9, 30 ) ),
+        "Fecha", [Date]
+    )
+RETURN
+    ADDCOLUMNS (
+        Base,
+        "Año", YEAR ( [Fecha] ),
+        "Mes", MONTH ( [Fecha] ),
+        "Orden mes", YEAR ( [Fecha] ) * 100 + MONTH ( [Fecha] ),
+        "Mes nombre", FORMAT ( [Fecha], "mmm yyyy" ),
+        "Inicio mes", DATE ( YEAR ( [Fecha] ), MONTH ( [Fecha] ), 1 ),
+        "Gestión",
+            VAR AnioInicio =
+                IF ( MONTH ( [Fecha] ) >= 4, YEAR ( [Fecha] ), YEAR ( [Fecha] ) - 1 )
+            RETURN
+                AnioInicio & "-" & ( AnioInicio + 1 )
+    )
